@@ -1,0 +1,33 @@
+# Local secrets — committed template is settings-template.py
+/settings.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Django
+/db.sqlite3
+/db.sqlite3-journal
+/media/
+/staticfiles/
+
+# Runtime artefacts
+log-*.log
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

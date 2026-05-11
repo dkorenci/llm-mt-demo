@@ -1,0 +1,15 @@
+# Phase 1 dependencies for the LLM MT demo.
+# Phase 2 will add: langchain, langchain-huggingface, huggingface_hub, etc.
+Django>=5.0
+requests
+brotli            # required to honour ``Accept-Encoding: ... br`` —
+                  # many CDNs (Cloudflare, etc.) brotli-compress HTML,
+                  # and without this package urllib3 would hand the
+                  # fetcher raw compressed bytes.
+
+# URL extractor backends. The default is newspaper (cleaner boilerplate
+# rejection); trafilatura is the fallback / alternative, selectable via
+# ``run.sh --fetcher trafilatura``.
+newspaper3k
+lxml_html_clean   # required at runtime by recent newspaper3k releases
+trafilatura

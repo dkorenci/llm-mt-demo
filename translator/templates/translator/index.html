@@ -1,0 +1,89 @@
+{% extends "translator/base.html" %}
+
+{% comment %}
+Single-page UI.  All per-tab state lives in this <form>; the server
+never reads or writes session-scoped state, so cloned tabs operate
+independently.
+
+Submit buttons distinguish themselves via the hidden ``action`` field,
+which the view branches on.  The "Clone to Tab" button additionally
+uses ``formtarget="_blank"`` to open the result in a new browser tab.
+{% endcomment %}
+
+{% block content %}
+<form id="mt-form" method="post" action="" class="page">
+  {% comment %}
+    No CSRF token: CSRF middleware is disabled (no auth, no sessions).
+    The hidden ``action`` field below is a fallback in case the form is
+    submitted by Enter rather than by a button; each submit button also
+    carries ``name="action"`` so the value travels regardless.
+  {% endcomment %}
+  <input type="hidden" name="action" id="id_action" value="">
+
+  {% if error %}
+    <div class="error" role="alert">An error occurred. Check the log.</div>
+  {% endif %}
+
+  {# ---- Row 1: language selectors ---- #}
+  <div class="row row-langs">
+    <label class="cell">
+      <span class="cell-label">Source language</span>
+      {{ form.source_language }}
+    </label>
+    <label class="cell">
+      <span class="cell-label">Target language</span>
+      {{ form.target_language }}
+    </label>
+  </div>
+
+  {# ---- Row 2: model + workflow ---- #}
+  <div class="row row-model">
+    <label class="cell">
+      <span class="cell-label">Model</span>
+      {{ form.model }}
+    </label>
+    <label class="cell">
+      <span class="cell-label">Workflow</span>
+      {{ form.workflow }}
+    </label>
+  </div>
+
+  {# ---- Row 3: URL + Load ---- #}
+  <div class="row row-url">
+    <label class="cell cell-grow">
+      <span class="cell-label">URL</span>
+      {{ form.url }}
+    </label>
+    <button type="submit" name="action" value="fetch" class="btn btn-load">
+      Load
+    </button>
+  </div>
+
+  {# ---- Row 4: Translate / Switch / Clone to Tab ---- #}
+  <div class="row row-actions">
+    <button type="submit" name="action" value="translate"
+            class="btn btn-translate">
+      Translate
+    </button>
+    <button type="button" id="btn-switch" class="btn">Switch</button>
+    <button type="submit" name="action" value="clone"
+            formtarget="_blank" class="btn">
+      Clone to Tab
+    </button>
+  </div>
+
+  {# ---- Row 5: source / target text panels (fills the rest of the page) ---- #}
+  <div class="row row-panels">
+    <div class="panel">
+      <label class="panel-label" for="id_source_text">Source text</label>
+      <textarea name="source_text" id="id_source_text"
+                wrap="soft" spellcheck="true">{{ form.source_text.value|default_if_none:"" }}</textarea>
+    </div>
+    <div class="panel">
+      <label class="panel-label" for="id_target_text">Translation</label>
+      <textarea name="target_text" id="id_target_text"
+                wrap="soft" spellcheck="false">{{ form.target_text.value|default_if_none:"" }}</textarea>
+    </div>
+  </div>
+</form>
+{% endblock %}
