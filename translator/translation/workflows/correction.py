@@ -1,27 +1,35 @@
-"""Translation + Correction workflow, expressed as a LangGraph graph.
+"""Translation + Correction workflow, built as a LangGraph state machine.
 
-Port of the procedural ``TranslationCorrectionWorkflow`` from
-``ma_prototypes/translation_workflows/translation_correction_workflow.py``,
-re-expressed as a LangGraph state machine and composed with the basic
-translator at the graph level: the basic translator's compiled graph is
-slotted in as the first node of this workflow's graph.
+The workflow performs a two-pass translation: an initial translation,
+then a review-and-correct step driven by an auxiliary LLM that is
+shown the original text, the initial translation, and the
+instructions under which the initial translation was produced.  The
+corrector is asked to reason briefly about possible improvements and
+to end its response with the final translation enclosed in
+``<solution>...</solution>`` tags, which the workflow then extracts.
+
+The graph composes with the basic translator at the *graph* level:
+the basic translator's compiled graph is slotted in as the first node
+of this workflow's graph, and overlapping state keys
+(``request``, ``instruction``, ``translation``) are auto-mapped between
+the parent and the subgraph.
 
 Graph::
 
     translate -> correct -> parse -> END
 
-* **translate** is the basic translator's own compiled graph (added as
-  a subgraph node).  It writes ``translation`` into the shared state.
+* **translate** is the basic translator's own compiled graph (added
+  as a subgraph node).  It writes ``translation`` into the shared
+  state.
 * **correct** sends the original text, the initial translation, and
-  the translator's own instruction string to an auxiliary LLM, using
-  the verbatim correction prompt from the reference implementation.
-  The aux LLM defaults to the LLM that drives the basic translator
+  the translator's own instruction string to an auxiliary LLM.  The
+  aux LLM defaults to the LLM that drives the basic translator
   (giving a true *self*-correction); a different factory LLM can be
   selected per workflow registration via ``override_llm_id``.
 * **parse** extracts the content of the ``<solution>...</solution>``
   tags from the correction response.  If the tags are missing the
-  workflow keeps the initial translation, exactly as the reference
-  does; the entry's ``extract_result`` logs the fallback.
+  workflow keeps the initial translation as a safe fallback; the
+  entry's ``extract_result`` logs the fallback.
 """
 from __future__ import annotations
 
@@ -44,13 +52,22 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Prompt (verbatim from the reference workflow)
+# Prompt
 # ---------------------------------------------------------------------------
 
-# Substitutions: prompt, original_text, translation, reasoning_words.
-# ``prompt`` here is the *translation* instruction text, repeated to
-# the corrector so it knows the constraints the initial translation was
-# produced under.
+# Substitutions:
+#   ``prompt``           -- the *translation* instruction text, repeated
+#                           to the corrector so it knows the constraints
+#                           the initial translation was produced under.
+#   ``original_text``    -- the source text being translated.
+#   ``translation``      -- the initial translation written by the
+#                           basic-translator subgraph.
+#   ``reasoning_words``  -- target length of the corrector's reasoning
+#                           section, in words.  Acts as a soft cap.
+#
+# The corrector is asked to end its response with the final answer
+# enclosed in ``<solution>...</solution>`` tags; the parse node uses
+# that to recover the corrected translation.
 CORRECTION_PROMPT: str = (
     "Your job is to review a translation, and correct it if necessary.\n"
     "You will be given an original text, translation instructions, and "

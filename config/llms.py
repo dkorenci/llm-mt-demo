@@ -9,10 +9,10 @@ Add or remove entries here to change what appears in the Model dropdown
 and what the workflows can use as an override LLM; no other code needs
 to change.
 
-Defaults reflect the reference factory:
+Defaults are chosen for reproducible translation output:
 ``temperature=None`` together with ``do_sample=False`` requests greedy
-decoding (no sampling), which is the deterministic baseline appropriate
-for a translation demo.
+decoding (no sampling), which is the deterministic baseline
+appropriate for a translation demo.
 """
 from __future__ import annotations
 
