@@ -1,25 +1,35 @@
-"""Basic single-LLM translator.
+"""Basic single-LLM translator, expressed as a LangGraph state machine.
 
-Wraps one factory LLM with a translation prompt.  Concrete dropdown
-entries in the Model selector resolve to one of these via the registry;
-adding a new entry to :mod:`config.llms` is the only thing required to
-make a new LLM appear in the UI.
+The basic translation step is structurally a single LLM call, but it is
+implemented here as a one-node LangGraph so every translation flow in
+this project -- one-shot or multi-step -- uses the same primitives
+(``TypedDict`` state, node functions, ``StateGraph`` construction,
+``compile()``, ``invoke()``).  This makes the basic translator and the
+multi-step workflows in :mod:`translator.translation.workflows` look
+structurally identical, matches the reference style in
+``cdt_mcqa_filtering_agent.py``, and keeps the door open for future
+features (streaming intermediate state, graph visualisation) without
+special-casing one-shot translation.
 
-The instance carries two public contracts that wrapping workflows rely
-on:
+Two public contracts the workflow layer relies on are preserved:
 
 * ``.llm`` -- the underlying LangChain chat model, used by default by
   multi-step workflows that need to issue auxiliary calls.
 * ``.instruction(req)`` -- the natural-language instruction string used
   in the translation prompt (without the source text).  Workflows that
   embed the original instruction in a downstream prompt (the
-  ``CorrectionWorkflow`` does this verbatim) read it from here, so the
+  ``CorrectionWorkflow`` does this verbatim) read it from here so the
   prompt text in :mod:`basic` stays the single source of truth.
 """
 from __future__ import annotations
 
+import functools
+from typing import TypedDict
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
+from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from config.languages import by_code
 from config.llms import get_spec
@@ -40,6 +50,21 @@ TRANSLATION_PROMPT: str = (
     "{text}\n"
     "</text>"
 )
+
+
+class BasicState(TypedDict):
+    """State threaded through the one-node basic-translation graph.
+
+    Carrying all three fields explicitly means every artefact of the
+    translation step (the request, the instruction string actually sent
+    to the LLM, and the resulting translation) is visible to anything
+    inspecting the post-run state -- including multi-step workflows
+    that want to compose at the graph level.
+    """
+
+    request: TranslationRequest
+    instruction: str
+    translation: str
 
 
 def _language_name(code: str) -> str:
@@ -66,21 +91,49 @@ def _strip(text: str) -> str:
     return text.strip()
 
 
+def _translate_node(state: BasicState, llm: BaseChatModel) -> dict:
+    """Single graph node: run one LLM call to translate the request text.
+
+    Returns the partial state update LangGraph expects (a dict of the
+    keys this node writes).  Empty input short-circuits to an empty
+    translation without contacting the provider.
+    """
+    request = state["request"]
+    if not request.text.strip():
+        return {"translation": ""}
+    prompt = ChatPromptTemplate.from_messages([("human", TRANSLATION_PROMPT)])
+    chain = prompt | llm
+    response = invoke_chain(
+        chain,
+        {
+            "instruction": state["instruction"],
+            "text": request.text,
+        },
+    )
+    return {"translation": _strip(response.content)}
+
+
 class BasicLLMTranslator(Translator):
-    """One factory LLM + the translation prompt; implements :class:`Translator`.
+    """One factory LLM + the translation prompt, executed as a 1-node graph.
 
     Constructed by the registry on demand for a given ``llm_id``; the
-    registry caches instances so each LLM has at most one wrapper for
-    the lifetime of the process.
+    registry caches instances so each LLM has at most one wrapper -- and
+    therefore at most one compiled graph -- for the lifetime of the
+    process.
     """
 
     def __init__(self, llm_id: str) -> None:
         spec = get_spec(llm_id)
         self.id: str = spec.id
         self.display_name: str = spec.display_name
-        # Public attribute on purpose: this is the documented hook by
-        # which multi-step workflows reach the underlying LLM.
+        # Public attribute on purpose: the documented hook by which
+        # multi-step workflows reach the underlying LLM.
         self.llm: BaseChatModel = create_llm(llm_id)
+        # Compile once per translator instance; the graph is reused on
+        # every translate() call.  Compilation is cheap relative to the
+        # LLM call (microseconds vs seconds) and only happens once
+        # because the registry caches the translator itself.
+        self._graph: CompiledStateGraph = self._build_graph()
 
     def instruction(self, request: TranslationRequest) -> str:
         """Return the natural-language translation instruction used in the prompt.
@@ -98,22 +151,33 @@ class BasicLLMTranslator(Translator):
         )
 
     def translate(self, request: TranslationRequest) -> TranslationResult:
-        """Translate ``request.text`` via one LLM call.
+        """Run the compiled graph for one translation request.
 
-        Empty input short-circuits to an empty result (a single empty
-        chat-completion call to the provider is wasteful and sometimes
-        outright errors).
+        The initial state seeds ``instruction`` from
+        :meth:`instruction` so the graph carries the same string the
+        node will eventually substitute into the prompt -- and that
+        wrapping workflows can read from the final state if they
+        compose at the graph level.
         """
-        if not request.text.strip():
-            return TranslationResult(text="")
-
-        prompt = ChatPromptTemplate.from_messages([("human", TRANSLATION_PROMPT)])
-        chain = prompt | self.llm
-        response = invoke_chain(
-            chain,
+        out: BasicState = self._graph.invoke(  # type: ignore[assignment]
             {
+                "request": request,
                 "instruction": self.instruction(request),
-                "text": request.text,
-            },
+                "translation": "",
+            }
         )
-        return TranslationResult(text=_strip(response.content))
+        return TranslationResult(text=out["translation"])
+
+    # ------------------------------------------------------------------
+    # Graph construction
+    # ------------------------------------------------------------------
+
+    def _build_graph(self) -> CompiledStateGraph:
+        """Build the trivial one-node graph: entry -> translate -> END."""
+        graph: StateGraph = StateGraph(BasicState)
+        # ``functools.partial`` binds the LLM so the node signature stays
+        # ``(state) -> dict`` -- the shape LangGraph expects.
+        graph.add_node("translate", functools.partial(_translate_node, llm=self.llm))
+        graph.set_entry_point("translate")
+        graph.add_edge("translate", END)
+        return graph.compile()

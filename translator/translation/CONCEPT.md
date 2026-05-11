@@ -55,26 +55,41 @@ failure is logged with the total attempt count before re-raising.
 ### `basic.py`
 
 `BasicLLMTranslator(llm_id)` — concrete `Translator` that wraps one
-factory LLM.  Two public contracts the workflow layer depends on:
+factory LLM.  Implemented as a **one-node LangGraph state machine** so
+the basic translator and the multi-step workflows in `workflows/` use
+identical primitives (`TypedDict` state, node functions, `StateGraph`
+construction, `compile()`, `invoke()`).
+
+- `BasicState(TypedDict)` — `{request, instruction, translation}`.
+  Every artefact of the translation step is in the state, so anything
+  inspecting the post-run state (logging, future graph-level
+  composition by a multi-step workflow) sees a single, complete record.
+- The graph is compiled once in `__init__` and reused on every
+  `translate()` call.  The registry caches the translator instance, so
+  one compilation per LLM per process.
+- `TRANSLATION_PROMPT` — `"{instruction}\n\n<text>\n{text}\n</text>"`.
+  The instruction substitution is the single source of truth used by
+  both the prompt and by workflows that quote the instruction
+  downstream.
+
+Two public contracts the workflow layer depends on:
 
 - `.llm` — the underlying `BaseChatModel`, used by default by
   multi-step workflows for their auxiliary LLM calls.
 - `.instruction(request)` — the natural-language translation
   instruction (without the source text).  Workflows that embed the
   original instruction in a downstream prompt (e.g. `CorrectionWorkflow`)
-  read it here, so the prompt phrasing in `basic.py` stays the single
-  source of truth.
-
-The prompt itself (`TRANSLATION_PROMPT`) is a one-liner template:
-`"{instruction}\n\n<text>\n{text}\n</text>"`.
+  read it here.
 
 ### `workflows/`
 
-One module per workflow:
+One module per workflow.  Like `basic.py`, every workflow is built as a
+LangGraph state machine (with the trivial exception of `NoneWorkflow`,
+which delegates directly):
 
 - `none.py` — `NoneWorkflow`, the default pass-through.  Single direct
-  call to `translator.translate(request)`; no LangGraph (it would be
-  overhead for a single op).
+  call to `translator.translate(request)`; no extra graph nodes (the
+  basic translator's own graph runs underneath).
 - `correction.py` — `CorrectionWorkflow`, *Self correction*.  A
   three-node LangGraph (`translate → correct → parse`) ported from
   `bench-translate`'s `translation_correction_workflow.py`.  The

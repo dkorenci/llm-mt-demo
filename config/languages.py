@@ -115,5 +115,5 @@ def by_code(code: str) -> Language:
 
 
 # Defaults exposed for the form/view layer.
-DEFAULT_SOURCE: str = "en"
-DEFAULT_TARGET: str = "hr"
+DEFAULT_SOURCE: str = "hr"
+DEFAULT_TARGET: str = "en"
