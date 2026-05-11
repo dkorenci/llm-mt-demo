@@ -1,35 +1,19 @@
 """The trivial pass-through workflow.
 
-Always present in the dropdown as ``NONE`` -- a single direct call to
-the selected translator.  The ``id`` and ``display_name`` are
-constructor arguments so the menu label can be renamed entirely from
-:mod:`config.workflows` without touching this file.
+The "graph" is literally the basic translator's compiled graph -- there
+is nothing to add.  Kept as its own module so every workflow lives
+under :mod:`translator.translation.workflows`, but the body is one
+line.
 """
 from __future__ import annotations
 
-from ..base import Translator, TranslationRequest, TranslationResult, Workflow
+from langchain_core.language_models import BaseChatModel
+from langgraph.graph.state import CompiledStateGraph
 
 
-class NoneWorkflow(Workflow):
-    """One-shot pass-through: delegate directly to the translator."""
-
-    # Class-level defaults; the constructor lets configuration override them.
-    id: str = "none"
-    display_name: str = "NONE"
-
-    def __init__(
-        self,
-        id: str | None = None,
-        display_name: str | None = None,
-    ) -> None:
-        if id is not None:
-            self.id = id
-        if display_name is not None:
-            self.display_name = display_name
-
-    def run(
-        self,
-        request: TranslationRequest,
-        translator: Translator,
-    ) -> TranslationResult:
-        return translator.translate(request)
+def create_none_workflow(
+    translator_graph: CompiledStateGraph,
+    translator_llm: BaseChatModel,  # unused; signature matches other workflow factories
+) -> CompiledStateGraph:
+    """Return the translator graph unchanged."""
+    return translator_graph

@@ -52,30 +52,30 @@ See each subdirectory's `CONCEPT.md` for details.
   the browser opens a new tab whose form is pre-populated identically;
   from that point on, the two tabs cannot influence one another.
 
-- **Three transparently separated layers.**
-  1. **LLM definitions** — `config/llms.py` lists `LLMSpec` parameter
-     sets (HF `repo_id`, provider, sampling params).
-     `translator/translation/llm_factory.py` turns a spec into a cached
-     LangChain `ChatHuggingFace` instance.
-  2. **Basic translator** — `translator/translation/basic.py` wraps one
-     factory LLM with the translation prompt.  Public `.llm` and
-     `.instruction(request)` hooks expose its LLM and prompt to
-     wrapping workflows.
-  3. **Workflows** — `translator/translation/workflows/` contains one
-     module per workflow.  `NoneWorkflow` is a direct pass-through;
-     `CorrectionWorkflow` is a LangGraph
-     (`translate → correct → parse`) self-correction step ported from
-     the `bench-translate` reference.
+- **Everything is a LangGraph.**
+  - **LLM definitions** — `config/llms.py` lists `LLMSpec` parameter
+    sets (HF `repo_id`, provider, sampling params).
+    `translator/translation/llm_factory.py` turns a spec into a cached
+    LangChain `ChatHuggingFace` instance.
+  - **Basic translator** — `translator/translation/basic.py` exposes
+    `create_basic_translator(llm)` returning a one-node compiled
+    graph.  `make_instruction(request)` is the single source of truth
+    for the translation instruction string and is reused by workflows.
+  - **Workflows** — `translator/translation/workflows/` contains one
+    module per workflow, each providing a
+    `create_<workflow>(translator_graph, translator_llm, **knobs)`
+    factory.  `correction.py` slots the basic translator's graph in as
+    a subgraph node (`graph.add_node("translate", translator_graph)`),
+    so multi-step workflows compose with the basic translator at the
+    graph level rather than via method calls.
 
-  The view depends only on the ABCs in `translator/translation/base.py`
-  and on the registry helpers in `translator/translation/registry.py`.
-
-- **Modular multi-step workflows.**  A multi-step workflow delegates
-  the actual translation step to whichever basic translator the view
-  supplies, so each workflow composes with every LLM in the factory
-  without per-LLM code.  By default the workflow reuses
-  `translator.llm` for its auxiliary calls; a registration in
-  `config/workflows.py` can override that with any factory LLM id.
+- **Configurable workflow registry.**  `config/workflows.py` declares
+  `WorkflowEntry` records (id, display name, factory, seed-state and
+  result-extraction callables).  Per-instance knobs (override LLM,
+  reasoning length, …) are captured in closures around the factory.
+  By default the corrector reuses the basic translator's LLM (true
+  self-correction); set `override_llm_id` on a registration to point
+  it at a different factory LLM.
 
 - **Retries on every LLM call.**  All chain invocations go through
   `translator.translation.retry.invoke_chain`, which retries 3× with

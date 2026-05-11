@@ -27,7 +27,7 @@ from .forms import (
 from .translation.base import TranslationRequest
 from .translation.registry import (
     get_translator,
-    get_workflow,
+    get_workflow_entry,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,8 +109,8 @@ def _do_translate(form: TranslateForm) -> str | None:
         return _ERROR
 
     try:
-        translator = get_translator(data.get("model") or "")
-        workflow = get_workflow(data.get("workflow") or "")
+        translator_graph, translator_llm = get_translator(data.get("model") or "")
+        entry = get_workflow_entry(data.get("workflow") or "")
     except KeyError as exc:
         logger.warning(
             "Translate aborted: unknown model or workflow selection (%s).",
@@ -118,13 +118,16 @@ def _do_translate(form: TranslateForm) -> str | None:
         )
         return _ERROR
 
+    request = TranslationRequest(
+        text=text, source_lang=source_lang, target_lang=target_lang
+    )
     try:
-        result = workflow.run(
-            TranslationRequest(
-                text=text, source_lang=source_lang, target_lang=target_lang
-            ),
-            translator,
-        )
+        # Build the workflow-specific graph (basic translator subgraph
+        # included where relevant), invoke it on the seed state, and
+        # let the entry pull the user-facing translation back out.
+        graph = entry.factory(translator_graph, translator_llm)
+        final_state = graph.invoke(entry.initial_state(request))
+        result = entry.extract_result(final_state)
     except Exception:
         logger.exception(
             "Translation failed (model=%s workflow=%s %s->%s)",

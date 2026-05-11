@@ -1,22 +1,32 @@
-"""Lookup tables that bridge :mod:`config` and the view layer.
+"""Lookup glue between :mod:`config` and the view layer.
 
-The translator side is built from the LLM catalogue in :mod:`config.llms`:
-each LLM declared there becomes one entry in the Model dropdown, and the
-view resolves a selected entry to a cached :class:`BasicLLMTranslator`
-wrapping the corresponding factory LLM.
+Two registries:
 
-The workflow side is unchanged in shape: workflows are declared as
-instances in :mod:`config.workflows` and indexed here by their ``id``.
+* **Translators** -- one per LLM declared in :mod:`config.llms`.
+  :func:`get_translator` returns the compiled basic-translator graph
+  paired with the underlying LLM, so workflow factories can use the
+  LLM for their auxiliary calls (defaulting to "the same LLM" gives a
+  natural self-correction).
+* **Workflows** -- a dict of :class:`~config.workflows.WorkflowEntry`
+  records indexed by id, declared in :mod:`config.workflows`.
+
+Both registries are cached: each LLM produces one
+``(CompiledStateGraph, BaseChatModel)`` pair for the lifetime of the
+process, and the workflow entries are simply imported once.
 """
 from __future__ import annotations
 
 import functools
 
+from langchain_core.language_models import BaseChatModel
+from langgraph.graph.state import CompiledStateGraph
+
 from config.llms import LLMS, default_llm_id, get_spec, list_llms
 from config.workflows import WORKFLOWS as _CONFIGURED_WORKFLOWS
+from config.workflows import WorkflowEntry
 
-from .base import Translator, Workflow
-from .basic import BasicLLMTranslator
+from .basic import create_basic_translator
+from .llm_factory import create_llm
 
 
 # ---------------------------------------------------------------------------
@@ -24,9 +34,10 @@ from .basic import BasicLLMTranslator
 # ---------------------------------------------------------------------------
 
 @functools.lru_cache(maxsize=None)
-def _build_translator(llm_id: str) -> Translator:
-    """Return a cached :class:`BasicLLMTranslator` for one LLM id."""
-    return BasicLLMTranslator(llm_id)
+def _build_translator(llm_id: str) -> tuple[CompiledStateGraph, BaseChatModel]:
+    """Return a cached (graph, llm) pair for one LLM id."""
+    llm = create_llm(llm_id)
+    return create_basic_translator(llm), llm
 
 
 def list_translators() -> list[tuple[str, str]]:
@@ -34,8 +45,8 @@ def list_translators() -> list[tuple[str, str]]:
     return list_llms()
 
 
-def get_translator(identifier: str) -> Translator:
-    """Resolve a Model dropdown selection to a translator instance.
+def get_translator(identifier: str) -> tuple[CompiledStateGraph, BaseChatModel]:
+    """Resolve a Model dropdown selection to ``(basic-translator graph, LLM)``.
 
     Raises:
         KeyError: if ``identifier`` does not match any LLM in
@@ -54,25 +65,26 @@ def default_translator_id() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Workflows -- declarative list of pre-built instances
+# Workflows -- declarative list of entries
 # ---------------------------------------------------------------------------
 
-def _build_workflow_index(items: list[Workflow]) -> dict[str, Workflow]:
-    """Build a ``{id: instance}`` index, raising on missing or duplicate ids."""
-    index: dict[str, Workflow] = {}
-    for item in items:
-        identifier = getattr(item, "id", "") or ""
-        if not identifier:
-            raise ValueError(f"Configured workflow {item!r} has no id")
-        if identifier in index:
+def _build_workflow_index(
+    items: list[WorkflowEntry],
+) -> dict[str, WorkflowEntry]:
+    """Build a ``{id: entry}`` index, raising on missing or duplicate ids."""
+    index: dict[str, WorkflowEntry] = {}
+    for entry in items:
+        if not entry.id:
+            raise ValueError(f"Configured workflow {entry!r} has no id")
+        if entry.id in index:
             raise ValueError(
-                f"Duplicate workflow id {identifier!r} in configuration"
+                f"Duplicate workflow id {entry.id!r} in configuration"
             )
-        index[identifier] = item
+        index[entry.id] = entry
     return index
 
 
-WORKFLOWS: dict[str, Workflow] = _build_workflow_index(
+WORKFLOWS: dict[str, WorkflowEntry] = _build_workflow_index(
     list(_CONFIGURED_WORKFLOWS)
 )
 
@@ -82,8 +94,8 @@ def list_workflows() -> list[tuple[str, str]]:
     return [(w.id, w.display_name) for w in _CONFIGURED_WORKFLOWS]
 
 
-def get_workflow(identifier: str) -> Workflow:
-    """Look up a workflow instance by its registry id."""
+def get_workflow_entry(identifier: str) -> WorkflowEntry:
+    """Look up a :class:`WorkflowEntry` by its registry id."""
     return WORKFLOWS[identifier]
 
 
@@ -92,14 +104,14 @@ def default_workflow_id() -> str:
     return next(iter(WORKFLOWS))
 
 
-# Re-export for downstream callers that want the raw catalogue order.
 __all__ = [
     "LLMS",
     "WORKFLOWS",
+    "WorkflowEntry",
     "default_translator_id",
     "default_workflow_id",
     "get_translator",
-    "get_workflow",
+    "get_workflow_entry",
     "list_translators",
     "list_workflows",
 ]

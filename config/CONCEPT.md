@@ -43,16 +43,25 @@ other code needs to change.
 ### `workflows.py`
 
 The translation workflow registry.  Exposes a list `WORKFLOWS` of
-`Workflow` instances.  Both the registry id (form value) and the
-dropdown label are passed to each workflow's constructor, so this file
-is the single place that *names* workflows.
+`WorkflowEntry` records.  Each entry has:
 
-The first entry is the default; it is always `NoneWorkflow` (the direct
-pass-through to the chosen LLM-backed translator).
+- `id` — form value (used by the dropdown / view).
+- `display_name` — menu label.
+- `factory(translator_graph, translator_llm) -> CompiledStateGraph` —
+  builds the workflow's compiled graph.  Per-workflow knobs (e.g.
+  `override_llm_id`, `reasoning_words`) are captured in a closure
+  around the factory.
+- `initial_state(request) -> dict` — seeds the graph's input state.
+- `extract_result(state) -> TranslationResult` — turns the graph's
+  final state into the user-visible result (and is where workflow-
+  specific fallback warnings are logged).
 
-Phase 2 ships `NoneWorkflow` and `CorrectionWorkflow` (Self correction).
-Adding another multi-step workflow is one new module under
-`translator/translation/workflows/` and one append to this file.
+This file is the single place that *names* workflows.  The first entry
+is the default; it is conventionally the `NONE` pass-through.
+
+Ships with `NONE` and `Self correction`.  Adding a multi-step
+workflow is one new module under `translator/translation/workflows/`
+plus one append to this list.
 
 ## Wiring
 

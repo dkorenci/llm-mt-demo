@@ -1,18 +1,14 @@
-"""Abstract translation interfaces.
+"""Shared dataclasses for the translation pipeline.
 
-These are the *only* types that the view layer should depend on.  Adding
-a new translator backend in Phase 2 means writing a concrete
-:class:`Translator` subclass and appending it to
-:data:`config.models.TRANSLATORS`; the view does not change.
-
-The :class:`Workflow` abstraction sits one level above and may invoke a
-translator multiple times (e.g. back-translation, self-correction, or
-agreement between two models).  The default ``NONE`` workflow is a
-one-shot pass-through (see :mod:`translator.translation.stub`).
+The view layer constructs a :class:`TranslationRequest` from form
+input, hands it to the registry's run-glue, and receives a
+:class:`TranslationResult` back.  Both are :func:`dataclasses.dataclass`
+records so they are trivially passable through LangGraph state and
+trivially extensible (adding a field is non-breaking thanks to
+``dataclass``-style construction at call sites).
 """
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 
@@ -21,8 +17,9 @@ class TranslationRequest:
     """Input for a single translation operation.
 
     Attributes:
-        text: The source text to translate.  May be empty; concrete
-            translators are expected to short-circuit empty input.
+        text: The source text to translate.  May be empty; the basic
+            translator short-circuits empty input without contacting
+            the provider.
         source_lang: ISO 639-1 code of the source language (e.g. ``"en"``).
         target_lang: ISO 639-1 code of the target language (e.g. ``"hr"``).
     """
@@ -41,45 +38,6 @@ class TranslationResult:
     """
 
     text: str
-    # Reserved for Phase 2: token usage, latency, intermediate steps,
-    # confidence, etc.  Adding fields here is non-breaking thanks to
-    # ``dataclass``-style construction at call sites.
-
-
-class Translator(ABC):
-    """Abstract base class for all translation backends.
-
-    Subclasses must set the class attributes :attr:`id` (registry key,
-    stable identifier used by the form) and :attr:`display_name` (label
-    shown in the model dropdown), and implement :meth:`translate`.
-    """
-
-    # Concrete subclasses override these.  They are declared here so that
-    # the registry layer and the view can read them in a uniform way.
-    id: str = ""
-    display_name: str = ""
-
-    @abstractmethod
-    def translate(self, request: TranslationRequest) -> TranslationResult:
-        """Translate ``request.text`` from its source to its target language."""
-        raise NotImplementedError
-
-
-class Workflow(ABC):
-    """Abstract base class for translation workflows.
-
-    A workflow orchestrates one or more invocations of a :class:`Translator`.
-    The simplest workflow (``NONE``) just delegates a single call; more
-    elaborate workflows may chain calls, run multiple translators in
-    parallel, or post-edit results.
-    """
-
-    id: str = ""
-    display_name: str = ""
-
-    @abstractmethod
-    def run(
-        self, request: TranslationRequest, translator: Translator
-    ) -> TranslationResult:
-        """Execute the workflow, returning the final translation result."""
-        raise NotImplementedError
+    # Reserved for future fields: token usage, latency, intermediate
+    # steps, confidence, etc.  Adding fields here is non-breaking
+    # thanks to ``dataclass``-style construction at call sites.
