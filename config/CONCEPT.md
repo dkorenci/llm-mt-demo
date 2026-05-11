@@ -1,9 +1,9 @@
 # `config/` — application configuration
 
-The three modules in this package declare *what is available to the
-user* in the demo.  Nothing in `config/` does any work itself: each
-module exposes plain data structures (lists, instances) that the rest
-of the app consumes.
+The modules in this package declare *what is available to the user* in
+the demo.  Nothing in `config/` does any work itself: each module
+exposes plain data structures (lists, instances) that the rest of the
+app consumes.
 
 ## Modules
 
@@ -25,29 +25,41 @@ The catalogue of languages offered in the source/target selectors.
 To add or remove a language, edit `OTHERS` (or `PINNED`); no other code
 needs to change.
 
-### `models.py`
+### `llms.py`
 
-Declares the LLM-backed translators available in the *Model* dropdown.
-The module exposes a single list, `TRANSLATORS`, of `Translator`
-instances.  Order is preserved in the UI; the first entry is the
-default selection.
+The Hugging Face inference-endpoint LLM catalogue.  Exposes a list
+`LLMS` of `LLMSpec` instances:
 
-Phase 1 ships a single `EchoTranslator` stub.  Phase 2 will append real
-Hugging Face / LangChain-backed instances here.
+- `LLMSpec(id, display_name, repo_id, provider, ...)` — parameters for a
+  single LLM.  `temperature=None` together with `do_sample=False`
+  selects greedy decoding (the deterministic baseline).
+- Helpers: `list_llms()` (Django-style choices), `get_spec(id)`,
+  `default_llm_id()`.
+
+Order is preserved in the *Model* dropdown; the first entry is the
+default selection.  Adding a new LLM is one new `LLMSpec` entry — no
+other code needs to change.
 
 ### `workflows.py`
 
-Declares the translation workflows available in the *Workflow*
-dropdown.  Exposes `WORKFLOWS`, a list of `Workflow` instances.  The
-first entry is the default; it is always `NoneWorkflow` (the direct
-pass-through to the chosen translator).
+The translation workflow registry.  Exposes a list `WORKFLOWS` of
+`Workflow` instances.  Both the registry id (form value) and the
+dropdown label are passed to each workflow's constructor, so this file
+is the single place that *names* workflows.
 
-Multi-step workflows (back-translation, agreement between two models,
-self-correction, …) will be added here in Phase 2.
+The first entry is the default; it is always `NoneWorkflow` (the direct
+pass-through to the chosen LLM-backed translator).
+
+Phase 2 ships `NoneWorkflow` and `CorrectionWorkflow` (Self correction).
+Adding another multi-step workflow is one new module under
+`translator/translation/workflows/` and one append to this file.
 
 ## Wiring
 
 The view layer never imports from these modules directly.  Instead it
-goes through `translator/translation/registry.py`, which indexes the
-`TRANSLATORS` / `WORKFLOWS` lists by their `id` attribute and exposes
-lookup helpers.
+goes through `translator/translation/registry.py`, which:
+
+- builds a `BasicLLMTranslator` on demand for each LLM declared in
+  `llms.py` (so the *Model* dropdown directly mirrors that catalogue),
+  and
+- indexes the `WORKFLOWS` list by `id` for the *Workflow* dropdown.

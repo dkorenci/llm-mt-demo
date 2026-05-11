@@ -1,10 +1,12 @@
 # LLM MT Demo — top-level concept
 
 A small Django web app for demonstrating machine translation with LLMs.
-Phase 1 (this branch's state) delivers the complete web interface with
-mocked translator/workflow plumbing.  Phase 2 will plug in LangChain +
-Hugging Face inference endpoints behind the abstractions described
-below; the UI does not need to change.
+The web interface is wired to Hugging Face inference endpoints through
+LangChain, with multi-step workflows implemented as LangGraph state
+machines.  Adding a new LLM is one entry in `config/llms.py`; adding a
+new multi-step workflow is one module under
+`translator/translation/workflows/` plus one entry in
+`config/workflows.py`.
 
 ## How to run
 
@@ -34,9 +36,9 @@ and is gitignored; `settings-template.py` is the committed template.
 | `.gitignore` | Excludes the secrets file, the SQLite DB, the `log-*.log` files, virtualenvs, IDE/OS detritus. |
 | `settings.py` / `settings-template.py` | Repo-root secrets module + its template. |
 | `mtdemo/` | Django project package: settings, root URLconf, WSGI/ASGI entrypoints. |
-| `config/` | Application configuration: language catalogue, model & workflow registries. |
-| `translator/` | The single Django app — view, form, fetcher subpackage, translation abstractions, templates, static assets. |
-| `db.sqlite3` | Auto-created by `migrate` for Django's own tables; the app defines no models in Phase 1. |
+| `config/` | Application configuration: language catalogue, LLM catalogue, workflow registry. |
+| `translator/` | The single Django app — view, form, fetcher subpackage, translation/LLM/workflow stack, templates, static assets. |
+| `db.sqlite3` | Auto-created by `migrate` for Django's own tables; the app defines no models of its own. |
 | `log-YYYYMMDD-HHMMSS.log` | Produced only when `./run.sh --log` is used; gitignored. |
 
 See each subdirectory's `CONCEPT.md` for details.
@@ -50,11 +52,35 @@ See each subdirectory's `CONCEPT.md` for details.
   the browser opens a new tab whose form is pre-populated identically;
   from that point on, the two tabs cannot influence one another.
 
-- **Generic translator abstraction.**  The view depends only on
-  `Translator` and `Workflow` ABCs in
-  `translator/translation/base.py`.  Concrete implementations are
-  declared in `config/models.py` and `config/workflows.py`; adding a
-  Phase-2 backend is one new class plus one line of configuration.
+- **Three transparently separated layers.**
+  1. **LLM definitions** — `config/llms.py` lists `LLMSpec` parameter
+     sets (HF `repo_id`, provider, sampling params).
+     `translator/translation/llm_factory.py` turns a spec into a cached
+     LangChain `ChatHuggingFace` instance.
+  2. **Basic translator** — `translator/translation/basic.py` wraps one
+     factory LLM with the translation prompt.  Public `.llm` and
+     `.instruction(request)` hooks expose its LLM and prompt to
+     wrapping workflows.
+  3. **Workflows** — `translator/translation/workflows/` contains one
+     module per workflow.  `NoneWorkflow` is a direct pass-through;
+     `CorrectionWorkflow` is a LangGraph
+     (`translate → correct → parse`) self-correction step ported from
+     the `bench-translate` reference.
+
+  The view depends only on the ABCs in `translator/translation/base.py`
+  and on the registry helpers in `translator/translation/registry.py`.
+
+- **Modular multi-step workflows.**  A multi-step workflow delegates
+  the actual translation step to whichever basic translator the view
+  supplies, so each workflow composes with every LLM in the factory
+  without per-LLM code.  By default the workflow reuses
+  `translator.llm` for its auxiliary calls; a registration in
+  `config/workflows.py` can override that with any factory LLM id.
+
+- **Retries on every LLM call.**  All chain invocations go through
+  `translator.translation.retry.invoke_chain`, which retries 3× with
+  exponential backoff (1 s → 2 s → 4 s) on transient cloud failures
+  before surfacing the exception to the view.
 
 - **Swappable URL fetcher.**  `translator/fetcher/` is a subpackage
   with two interchangeable backends behind a `Fetcher` ABC:
