@@ -132,6 +132,27 @@ LLMS: list[LLMSpec] = [
         model="google/gemma-3-27b-it:featherless-ai",
         base_url=HF_OPENAI_BASE_URL,
     ),
+    # Gemma 4 31B-it: sampling params are the values recommended in the
+    # model card (temperature=1.0, top_p=0.95, top_k=64), so output is
+    # non-deterministic by design (unlike the greedy Gemma 3 entries).
+    # Non-thinking mode is selected two ways: (a) our prompts don't
+    # inject a system message containing the ``<|think|>`` trigger
+    # token, which is the model's primary thinking switch; (b) we also
+    # pass ``chat_template_kwargs.enable_thinking=False`` via the
+    # OpenAI-compatible ``extra_body`` for servers (vLLM/SGLang) that
+    # surface that toggle through the chat template.
+    OpenAISpec(
+        id="gemma4-31b",
+        display_name="Gemma 4 31B Instruct (non-thinking)",
+        model="google/gemma-4-31B-it:featherless-ai",
+        base_url=HF_OPENAI_BASE_URL,
+        temperature=1.0,
+        top_p=0.95,
+        extra_body={
+            "top_k": 64,
+            "chat_template_kwargs": {"enable_thinking": False},
+        },
+    ),
 ]
 
 
