@@ -1,3 +1,14 @@
+Machine translation demo app implementing the translation workflow described in the paper:
+IRB-MT at WMT25 Translation Task: A Simple Agentic System Using an Off-the-Shelf LLM
+https://aclanthology.org/2025.wmt-1.51.pdf
+
+The demo was created as a companion to the presentation about the approach
+held at monthly Python Meetup organized by Python Hrvatska.
+The presentation is in the presentation/ folder.
+It enables one to play with MT based on smaller LLMs, and with modifying the functionality.
+
+The demo was created using Claude Code.
+
 LLM MT Demo
 ===========
 
@@ -25,6 +36,7 @@ run, ./run.sh seeds a local settings.py from settings-template.py:
     HF_INFERENCE_ENDPOINT_TOKEN = ""
 
 Paste your token between the quotes. The file is gitignored.
+Several dollars of HF credits should allow processing of at least hundreds of texts.
 
 
 2. Running
