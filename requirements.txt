@@ -8,9 +8,11 @@ newspaper3k
 lxml_html_clean   # required at runtime by recent newspaper3k releases
 trafilatura
 
-# LLM stack (Phase 2): LangChain + LangGraph + Hugging Face inference endpoints.
+# LLM stack: LangChain + LangGraph + Hugging Face inference endpoints,
+# with the OpenAI adapter for HF's OpenAI-compatible router.
 langchain
 langchain-core
 langchain-huggingface
+langchain-openai
 langgraph
 huggingface_hub

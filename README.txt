@@ -2,12 +2,9 @@ Machine translation demo app implementing the translation workflow described in 
 IRB-MT at WMT25 Translation Task: A Simple Agentic System Using an Off-the-Shelf LLM
 https://aclanthology.org/2025.wmt-1.51.pdf
 
-The demo was created as a companion to the presentation about the approach
-held at monthly Python Meetup organized by Python Hrvatska.
+The demo was created as a companion to the presentation about the approach.
 The presentation is in the presentation/ folder.
-It enables one to play with MT based on smaller LLMs, and with modifying the functionality.
-
-The demo was created using Claude Code.
+It enables one to play with MT based on smaller LLMs and multi-LLM workflows.
 
 LLM MT Demo
 ===========
@@ -95,19 +92,51 @@ a file.
 4. Adding a new LLM
 -------------------
 
-Append one LLMSpec to config/llms.py:
+Entries in config/llms.py belong to a discriminated union; pick the
+spec type that matches how the LLM should be accessed:
+
+  HFSpec       Native Hugging Face inference-endpoint protocol.
+               Carries HF-native knobs (do_sample, top_k,
+               repetition_penalty, model_kwargs). Greedy decoding =
+               temperature=None + do_sample=False.
+
+  OpenAISpec   OpenAI-compatible Chat Completions protocol. Use this
+               to talk to HF's OpenAI-compatible router (set base_url
+               = HF_OPENAI_BASE_URL and encode the HF provider in the
+               model string as "<repo_id>:<provider>"), or any other
+               OpenAI-compatible server. Greedy decoding =
+               temperature=0.0. Non-standard knobs (top_k,
+               repetition_penalty, ...) go in extra_body.
+
+The factory dispatches on the spec's runtime type, so the rest of the
+code stays the same.
+
+Append the new entry to LLMS:
 
     LLMS: list[LLMSpec] = [
-        LLMSpec(
+        OpenAISpec(
             id="gemma3-12b",
             display_name="Gemma 3 12B Instruct",
-            repo_id="google/gemma-3-12b-it",
-            provider="featherless-ai",
+            model="google/gemma-3-12b-it:featherless-ai",
+            base_url=HF_OPENAI_BASE_URL,
         ),
         # ...
-        LLMSpec(
+
+        # An OpenAI-compatible-protocol entry:
+        OpenAISpec(
             id="my-new-model",
             display_name="My New Model",
+            model="<hf-org>/<hf-repo>:<hf-inference-provider>",
+            base_url=HF_OPENAI_BASE_URL,
+            # Optional knobs (defaults are greedy decoding):
+            #   temperature=0.0, max_tokens=4096, top_p=None,
+            #   extra_body={"top_k": 50, "repetition_penalty": 1.1},
+        ),
+
+        # ...or a native-HF-protocol entry:
+        HFSpec(
+            id="my-other-model",
+            display_name="My Other Model",
             repo_id="<hf-org>/<hf-repo>",
             provider="<hf-inference-provider>",
             # Optional knobs (defaults are greedy decoding):

@@ -27,18 +27,31 @@ needs to change.
 
 ### `llms.py`
 
-The Hugging Face inference-endpoint LLM catalogue.  Exposes a list
-`LLMS` of `LLMSpec` instances:
+The LLM catalogue.  Exposes a list `LLMS` whose entries are members of
+a discriminated union — one dataclass per access protocol:
 
-- `LLMSpec(id, display_name, repo_id, provider, ...)` — parameters for a
-  single LLM.  `temperature=None` together with `do_sample=False`
-  selects greedy decoding (the deterministic baseline).
+- `HFSpec(id, display_name, repo_id, provider, ...)` — accessed via the
+  native HF inference-endpoint protocol.  Carries HF-native knobs
+  (`do_sample`, `top_k`, `repetition_penalty`, `model_kwargs`).
+  Greedy decoding = `temperature=None` + `do_sample=False`.
+- `OpenAISpec(id, display_name, model, base_url, ...)` — accessed via
+  the OpenAI-compatible Chat Completions protocol.  Used to talk to
+  HF's OpenAI-compatible router (`base_url` =
+  `https://router.huggingface.co/v1`, with provider routing encoded in
+  the `model` string as `"<repo_id>:<provider>"`) or any other
+  OpenAI-compatible server.  Greedy decoding = `temperature=0.0`.
+  Non-standard knobs (`top_k`, `repetition_penalty`, ...) go in
+  `extra_body`; HF's router honours them, strict OpenAI ignores them.
+- `LLMSpec = HFSpec | OpenAISpec` — the union type used elsewhere.
 - Helpers: `list_llms()` (Django-style choices), `get_spec(id)`,
   `default_llm_id()`.
 
+The factory in `translator/translation/llm_factory.py` dispatches on
+the spec's runtime type to build the matching LangChain wrapper.
+
 Order is preserved in the *Model* dropdown; the first entry is the
-default selection.  Adding a new LLM is one new `LLMSpec` entry — no
-other code needs to change.
+default selection.  Adding a new LLM is one new spec entry of either
+type — no other code needs to change.
 
 ### `workflows.py`
 

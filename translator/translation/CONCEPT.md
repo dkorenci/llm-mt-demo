@@ -23,8 +23,17 @@ Two small dataclasses:
 
 ### `llm_factory.py`
 
-`create_llm(llm_id) -> BaseChatModel` — cached LangChain
-`ChatHuggingFace` wrapper built from the spec in `config/llms.py`.
+`create_llm(llm_id) -> BaseChatModel` — cached LangChain chat-LLM
+wrapper built from the matching spec in `config/llms.py`.  Dispatches
+on the spec's runtime type:
+
+- `HFSpec` -> `ChatHuggingFace` over a `HuggingFaceEndpoint` (native
+  HF inference-endpoint protocol).
+- `OpenAISpec` -> `ChatOpenAI` (OpenAI-compatible Chat Completions
+  protocol).
+
+Adding a new access protocol = one new spec dataclass in
+`config/llms.py` and one new isinstance branch here.
 
 ### `retry.py`
 
@@ -107,8 +116,14 @@ Three lookups, one graph build, one graph invocation.
 
 ### A new LLM
 
-1. Append an `LLMSpec` to `LLMS` in `config/llms.py` (id, display name,
-   HF `repo_id`, inference provider).
+1. Append a spec to `LLMS` in `config/llms.py`.  Pick the spec type
+   that matches the access protocol:
+   - `HFSpec(id, display_name, repo_id, provider, ...)` for the native
+     HF inference-endpoint protocol.
+   - `OpenAISpec(id, display_name, model, base_url, ...)` for the
+     OpenAI-compatible protocol (use `HF_OPENAI_BASE_URL` and
+     `"<repo_id>:<provider>"` as the model string to target HF's
+     router).
 2. Done — the Model dropdown picks it up.
 
 ### A new multi-step workflow

@@ -53,10 +53,12 @@ See each subdirectory's `CONCEPT.md` for details.
   from that point on, the two tabs cannot influence one another.
 
 - **Everything is a LangGraph.**
-  - **LLM definitions** — `config/llms.py` lists `LLMSpec` parameter
-    sets (HF `repo_id`, provider, sampling params).
-    `translator/translation/llm_factory.py` turns a spec into a cached
-    LangChain `ChatHuggingFace` instance.
+  - **LLM definitions** — `config/llms.py` lists spec records from a
+    discriminated union: `HFSpec` (native HF inference protocol) and
+    `OpenAISpec` (OpenAI-compatible Chat Completions, e.g. HF's
+    OpenAI-compatible router).  `translator/translation/llm_factory.py`
+    dispatches on the spec type to build the matching cached LangChain
+    wrapper (`ChatHuggingFace` or `ChatOpenAI`).
   - **Basic translator** — `translator/translation/basic.py` exposes
     `create_basic_translator(llm)` returning a one-node compiled
     graph.  `make_instruction(request)` is the single source of truth
